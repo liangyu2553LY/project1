@@ -1,0 +1,212 @@
+C51 COMPILER V9.01   HC_SR04                                                               09/18/2021 08:55:27 PAGE 1   
+
+
+C51 COMPILER V9.01, COMPILATION OF MODULE HC_SR04
+OBJECT MODULE PLACED IN HC-SR04.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE HC-SR04.c OMF2 BROWSE DEBUG TABS(2)
+
+line level    source
+
+   1          //超声波测距
+   2          //晶振=8M
+   3          //MCU=STC10F04XE
+   4          //P0.0-P0.6共阳数码管引脚
+   5          //Trig  = P1^0
+   6          //Echo  = P3^2
+   7          #include <reg52.h>     //包括一个52标准内核的头文件
+   8          #define uchar unsigned char //定义一下方便使用
+   9          #define uint  unsigned int
+  10          #define ulong unsigned long
+  11          //***********************************************
+  12          sfr  CLK_DIV = 0x97; //为STC单片机定义,系统时钟分频
+  13                               //为STC单片机的IO口设置地址定义
+  14          sfr   P0M1   = 0X93;
+  15          sfr   P0M0   = 0X94;
+  16          sfr   P1M1   = 0X91;
+  17          sfr   P1M0   = 0X92;
+  18          sfr P2M1   = 0X95;
+  19          sfr P2M0   = 0X96;
+  20          //***********************************************
+  21          sbit Trig  = P1^0; //产生脉冲引脚
+  22          sbit Echo  = P3^2; //回波引脚
+  23          sbit test  = P1^1; //测试用引脚
+  24          
+  25          uchar code SEG7[10]={0xC0,0xF9,0xA4,0xB0,0x99,0x92,0x82,0xF8,0x80,0x90};//数码管0-9
+  26          uint distance[4];  //测距接收缓冲区
+  27          uchar ge,shi,bai,temp,flag,outcomeH,outcomeL,i;  //自定义寄存器
+  28          bit succeed_flag;  //测量成功标志
+  29          //********函数声明
+  30          void conversion(uint temp_data);
+  31          void delay_20us();
+  32          //void pai_xu();
+  33          
+  34          void main(void)   // 主程序
+  35          {  uint distance_data,a,b;
+  36   1         uchar CONT_1;   
+  37   1         CLK_DIV=0X03; //系统时钟为1/8晶振（pdf-45页） 
+  38   1           P0M1 = 0;   //将io口设置为推挽输出
+  39   1           P1M1 = 0;
+  40   1           P2M1 = 0;
+  41   1           P0M0 = 0XFF;
+  42   1           P1M0 = 0XFF;
+  43   1           P2M0 = 0XFF;
+  44   1         i=0;
+  45   1         flag=0;
+  46   1        test =0;
+  47   1        Trig=0;       //首先拉低脉冲输入引脚
+  48   1        TMOD=0x11;    //定时器0，定时器1，16位工作方式
+  49   1        TR0=1;       //启动定时器0
+  50   1         IT0=0;        //由高电平变低电平，触发外部中断
+  51   1        ET0=1;        //打开定时器0中断
+  52   1       //ET1=1;        //打开定时器1中断
+  53   1        EX0=0;        //关闭外部中断
+  54   1        EA=1;         //打开总中断0  
+  55   1        
+C51 COMPILER V9.01   HC_SR04                                                               09/18/2021 08:55:27 PAGE 2   
+
+  56   1        
+  57   1      while(1)         //程序循环
+  58   1        {
+  59   2        EA=0;
+  60   2             Trig=1;
+  61   2              delay_20us();
+  62   2              Trig=0;         //产生一个20us的脉冲，在Trig引脚  
+  63   2              while(Echo==0); //等待Echo回波引脚变高电平
+  64   2             succeed_flag=0; //清测量成功标志
+  65   2             EX0=1;          //打开外部中断
+  66   2            TH1=0;          //定时器1清零
+  67   2              TL1=0;          //定时器1清零
+  68   2             TF1=0;          //
+  69   2              TR1=1;          //启动定时器1
+  70   2         EA=1;
+  71   2      
+  72   2            while(TH1 < 30);//等待测量的结果，周期65.535毫秒（可用中断实现）  
+  73   2            TR1=0;          //关闭定时器1
+  74   2              EX0=0;          //关闭外部中断
+  75   2      
+  76   2          if(succeed_flag==1)
+  77   2             {  
+  78   3             distance_data=outcomeH;                //测量结果的高8位
+  79   3                 distance_data<<=8;                   //放入16位的高8位
+  80   3               distance_data=distance_data|outcomeL;//与低8位合并成为16位结果数据
+  81   3                  distance_data*=12;                  //因为定时器默认为12分频
+  82   3                 distance_data/=58;                   //微秒的单位除以58等于厘米
+  83   3               }                                      //为什么除以58等于厘米，  Y米=（X秒*344）/2
+  84   2                                                   // X秒=（ 2*Y米）/344 ==》X秒=0.0058*Y米 ==》厘米=微�
+             -��/58 
+  85   2          if(succeed_flag==0)
+  86   2             {
+  87   3                  distance_data=0;                    //没有回波则清零
+  88   3              test = !test;                       //测试灯变化
+  89   3                 }
+  90   2      
+  91   2           ///       distance[i]=distance_data; //将测量结果的数据放入缓冲区
+  92   2           ///        i++;
+  93   2            ///  if(i==3)
+  94   2          ///      {
+  95   2          ///        distance_data=(distance[0]+distance[1]+distance[2]+distance[3])/4;
+  96   2           ///        pai_xu();
+  97   2           ///        distance_data=distance[1];
+  98   2      
+  99   2            
+ 100   2           a=distance_data;
+ 101   2             if(b==a) CONT_1=0;
+ 102   2             if(b!=a) CONT_1++;
+ 103   2             if(CONT_1>=3)
+ 104   2             { CONT_1=0;
+ 105   3              b=a;
+ 106   3              conversion(b);
+ 107   3            }       
+ 108   2          ///    i=0;
+ 109   2          ///   }      
+ 110   2         }
+ 111   1      }
+ 112          //***************************************************************
+ 113          //外部中断0，用做判断回波电平
+ 114          INTO_()  interrupt 0   // 外部中断是0号
+ 115           {    
+ 116   1           outcomeH =TH1;    //取出定时器的值
+C51 COMPILER V9.01   HC_SR04                                                               09/18/2021 08:55:27 PAGE 3   
+
+ 117   1           outcomeL =TL1;    //取出定时器的值
+ 118   1           succeed_flag=1;   //至成功测量的标志
+ 119   1           EX0=0;            //关闭外部中断
+ 120   1        }
+ 121          //****************************************************************
+ 122          //定时器0中断,用做显示
+ 123          timer0() interrupt 1  // 定时器0中断是1号
+ 124             {
+ 125   1         TH0=0xfd; //写入定时器0初始值
+ 126   1         TL0=0x77;    
+ 127   1         switch(flag)   
+ 128   1            {case 0x00:P0=ge; P2=0xfd;flag++;break;
+ 129   2            case 0x01:P0=shi;P2=0xfe;flag++;break;
+ 130   2            case 0x02:P0=bai;P2=0xfb;flag=0;break;
+ 131   2            }
+ 132   1         }
+ 133          //*****************************************************************
+ 134          /*
+ 135          //定时器1中断,用做超声波测距计时
+ 136          timer1() interrupt 3  // 定时器0中断是1号
+ 137              {
+ 138          TH1=0;
+ 139          TL1=0;
+ 140               }
+ 141          */
+ 142          //******************************************************************
+ 143          //显示数据转换程序
+ 144          void conversion(uint temp_data)  
+ 145           {  
+ 146   1          uchar ge_data,shi_data,bai_data ;
+ 147   1          bai_data=temp_data/100 ;
+ 148   1          temp_data=temp_data%100;   //取余运算
+ 149   1          shi_data=temp_data/10 ;
+ 150   1          temp_data=temp_data%10;   //取余运算
+ 151   1          ge_data=temp_data;
+ 152   1      
+ 153   1          bai_data=SEG7[bai_data];
+ 154   1          shi_data=SEG7[shi_data];
+ 155   1          ge_data =SEG7[ge_data];
+ 156   1      
+ 157   1          EA=0;
+ 158   1          bai = bai_data;
+ 159   1          shi = shi_data;
+ 160   1          ge  = ge_data ; 
+ 161   1         EA=1;
+ 162   1       }
+ 163          //******************************************************************
+ 164          void delay_20us()
+ 165           {  uchar bt ;
+ 166   1          for(bt=0;bt<100;bt++);
+ 167   1       }
+ 168          /*
+ 169          void pai_xu()
+ 170            {  uint t;
+ 171            if (distance[0]>distance[1])
+ 172              {t=distance[0];distance[0]=distance[1];distance[1]=t;} /*交换值
+ 173            if(distance[0]>distance[2])
+ 174              {t=distance[2];distance[2]=distance[0];distance[0]=t;} /*交换值
+ 175            if(distance[1]>distance[2])
+ 176              {t=distance[1];distance[1]=distance[2];distance[2]=t;} /*交换值   
+ 177              }
+ 178          */
+C51 COMPILER V9.01   HC_SR04                                                               09/18/2021 08:55:27 PAGE 4   
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    356    ----
+   CONSTANT SIZE    =     10    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     16       9
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

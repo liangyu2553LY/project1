@@ -1,0 +1,4 @@
+"STARTUP.obj",
+"main.obj" 
+TO "智能台灯设计" 
+RAMSIZE(256) 
